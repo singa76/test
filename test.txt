@@ -1,0 +1,156 @@
+#include <GUIConstantsEx.au3>
+#include <Array.au3>
+#include <GuiListBox.au3>
+#include <Misc.au3>
+
+Opt("WinTitleMatchMode", 2)
+
+Global $hGUI, $hInput, $hList, $sPartialData
+Global $titles[0]
+Global $handles[0]
+Global $sData = ""
+
+
+;EnsureSingleton()
+Dim $handle = WinActivate("zFocusWin")
+;MsgBox(0, "handle: ", $handle)
+If ($handle<>0) Then  ; an instance of focusWin is running,
+;	MsgBox(0, "Exiting", "exiting")
+	Exit(0)
+EndIf
+
+$hGUI = GUICreate("zFocusWin", 200, 400)
+$hInput = GUICtrlCreateInput("", 5, 5, 190, 20)
+$hList = GUICtrlCreateList("", 5, 30, 190, 325, BitOR(0x00100000, 0x00200000))
+
+InitTitles()
+
+;$refreshButton = GUICtrlCreateButton("Refresh", 60, 360, 80, 30)
+$hUP = GUICtrlCreateDummy()
+$hDOWN = GUICtrlCreateDummy()
+$hENTER = GUICtrlCreateDummy()
+$hRefresh = GUICtrlCreateDummy()
+$hClear = GUICtrlCreateDummy()
+GUISetState(@SW_SHOW, $hGUI)
+
+
+; Set accelerators for Cursor up/down and Enter
+Dim $AccelKeys[][2] = [["{UP}", $hUP], ["{DOWN}", $hDOWN], ["{ENTER}", $hENTER], ["^r", $hRefresh], ["{DELETE}", $hClear]]
+GUISetAccelerators($AccelKeys)
+
+$sCurr_Input = ""
+$iCurrIndex = -1
+
+While 1
+	Switch GUIGetMsg()
+		Case $GUI_EVENT_CLOSE
+			Exit
+		Case $hList
+			$sChosen = GUICtrlRead($hList)
+			If $sChosen <> "" Then GUICtrlSetData($hInput, $sChosen)
+		Case $hRefresh
+			InitTitles()
+			;If $sPartialData <> "" Then
+			;$sFinal = GUICtrlRead($hInput)
+			;If _ArraySearch($titles, $sFinal) > 0 Then
+			;EndIf
+			;EndIf
+		Case $hUP
+			If $sPartialData <> "" Then
+				$iCurrIndex -= 1
+				If $iCurrIndex < 0 Then $iCurrIndex = 0
+				_GUICtrlListBox_SetCurSel($hList, $iCurrIndex)
+			EndIf
+		Case $hDOWN
+			If $sPartialData <> "" Then
+				$iTotal = _GUICtrlListBox_GetCount($hList)
+				$iCurrIndex += 1
+				If $iCurrIndex > $iTotal - 1 Then $iCurrIndex = $iTotal - 1
+				_GUICtrlListBox_SetCurSel($hList, $iCurrIndex)
+			EndIf
+
+		Case $hClear
+			clearInputAndReInit()
+
+		Case $hENTER
+			If _GUICtrlListBox_GetCount($hList) == 1 Then
+				$sText = _GUICtrlListBox_GetText($hList, 0)
+				FocusWin($sText)
+			ElseIf $iCurrIndex <> -1 Then
+				$sText = _GUICtrlListBox_GetText($hList, $iCurrIndex)
+				FocusWin($sText)
+				GUICtrlSetData($hInput, $sText)
+				$iCurrIndex = -1
+				_GUICtrlListBox_SetCurSel($hList, $iCurrIndex)
+			EndIf
+			clearInputAndReInit()
+	EndSwitch
+
+	; If input has changed, refill list with matching items
+	If GUICtrlRead($hInput) <> $sCurr_Input Then
+		CheckInputText()
+		$sCurr_Input = GUICtrlRead($hInput)
+
+		If GUICtrlRead($hInput) = "" Then
+			GUICtrlSetData($hList, "")
+			GUICtrlSetData($hList, $sData)
+		EndIf
+	EndIf
+WEnd
+
+;-----------------------------------------------------------------------------------------------------------------------
+Func InitTitles()
+	Local $aWinList = WinList("[REGEXPTITLE:(?i)(\w)]")
+	Dim $ret
+
+	Global $titles[0]
+	Global $handles[0]
+
+	For $i = 1 To $aWinList[0][0]
+		If $aWinList[$i][0] <> "" And BitAND(WinGetState($aWinList[$i][1]), 2) Then
+			$ret &= $aWinList[$i][0] & @LF
+			_ArrayAdd($titles, $aWinList[$i][0])
+			_ArrayAdd($handles, $aWinList[$i][1])
+		EndIf
+	Next
+
+	Global $sData = "|" & _ArrayToString($titles)
+	GUICtrlSetData($hList, $sData)
+	ConsoleWrite('@@ Debug(' & @ScriptLineNumber & ') : GUICtrlSetData($hList, $sData) = ' & GUICtrlSetData($hList, $sData) & @CRLF & '>Error code: ' & @error & @CRLF) ;### Debug Console
+	$iCurrIndex = -1
+	_GUICtrlListBox_SetCurSel($hList, $iCurrIndex)
+
+EndFunc   ;==>InitTitles
+
+
+Func CheckInputText()
+	$sPartialData = "|" ; Start with delimiter so new data always replaces old
+	Local $sInput = GUICtrlRead($hInput)
+	If $sInput <> "" Then
+		For $i = 0 To UBound($titles) - 1
+			If StringInStr($titles[$i], $sInput) <> 0 Then
+				$sPartialData &= $titles[$i] & "|"
+
+				;MsgBox(0, "$sPartialData", $sPartialData)
+			EndIf
+		Next
+		GUICtrlSetData($hList, $sPartialData)
+	EndIf
+EndFunc   ;==>CheckInputText
+
+Func EnsureSingleton()
+	If _Singleton("test", 1) = 0 Then
+		MsgBox(0, "Warning", "An occurence of test is already running")
+		Exit
+	EndIf
+EndFunc   ;==>EnsureSingleton
+
+Func FocusWin($winTitle)
+	WinActivate($winTitle)
+;	Exit 0
+EndFunc
+
+Func clearInputAndReInit()
+	GUICtrlSetData($hInput, "")
+	InitTitles()
+EndFunc
